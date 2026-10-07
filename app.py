@@ -9,6 +9,7 @@ from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from dataclasses import replace
 from companions import GlassShell, SniffyCompanion, PixelEye
 from sounds import Sounds
+from dialogue import COMPLETION_LINES, UPDATE_LINES, choose_line
 from core import *
 
 class Job(QThread):
@@ -36,6 +37,7 @@ class Window(QWidget):
         self.storage_generation = 0
         self.estimated = None
         self.stage = 'ready'; self.exit_ready = False; self.closing = False
+        self.update_pending = False
         self.last_activity = time.monotonic(); self.docked = False
         self.sounds = Sounds(self.settings,self); self.sounds.shutdown_finished.connect(self.finish_exit)
         self.setWindowTitle('StinkSNIFFER')
@@ -87,6 +89,9 @@ class Window(QWidget):
         layout.addLayout(header)
         self.update_button = QPushButton(''); self.update_button.hide(); self.update_button.clicked.connect(self.show_release)
         layout.addWidget(self.update_button)
+        self.update_sniffy_slot = QWidget(); self.update_sniffy_slot.hide()
+        self.update_sniffy_layout = QVBoxLayout(self.update_sniffy_slot); self.update_sniffy_layout.setContentsMargins(0,0,0,0)
+        layout.addWidget(self.update_sniffy_slot)
         self.status = QLabel('• Local capture  //  ready', objectName='muted')
         self.status.setWordWrap(True)
         status_row = QHBoxLayout(); status_row.addWidget(self.status,1)
@@ -159,6 +164,10 @@ class Window(QWidget):
         self.completed = QLabel(); self.completed.setWordWrap(True); done_layout.addWidget(self.completed)
         actions = QHBoxLayout(); open_btn = QPushButton('Open Folder'); open_btn.clicked.connect(self.open_folder); actions.addWidget(open_btn)
         self.play = QPushButton('Play in VLC'); self.play.clicked.connect(self.play_vlc); actions.addWidget(self.play); done_layout.addLayout(actions); layout.addWidget(self.done)
+        self.youtube_button = QPushButton('[ VISIT @THESTINKWIND ]')
+        self.youtube_button.setToolTip('YouTube archives / meme documentaries')
+        self.youtube_button.clicked.connect(lambda:QDesktopServices.openUrl(QUrl('https://www.youtube.com/@TheStinkWind')))
+        done_layout.addWidget(self.youtube_button)
         body.addStretch()
         self.folder_label = QLabel(objectName='faint'); self.folder_label.setWordWrap(True); layout.addWidget(self.folder_label); self.refresh_folder()
         for w in (self.card,self.save,self.capture_panel,self.done,self.storage_label): w.hide()
@@ -230,6 +239,7 @@ class Window(QWidget):
             self.sniffy.sprite.bounce(); self.export_quip()
 
     def dock_sniffy(self,dock):
+        self.update_sniffy_layout.removeWidget(self.sniffy); self.update_sniffy_slot.hide()
         self.docked = dock
         if dock:
             self.sniffy_slot_layout.addWidget(self.sniffy); self.sniffy_slot.setVisible(not self.settings.value('hide_sniffy',False,type=bool))
@@ -250,6 +260,7 @@ class Window(QWidget):
         self.dock_sniffy(False); self.sniffy_target = self.input
         self.status.setText('• Local capture  //  ready'); self.sniffy.say('Fresh start. My favourite kind of suspicious activity.')
         self.input.setFocus()
+        if hasattr(self,'release'): self.show_update_sniffy()
 
     def laugh_status(self,status):
         if status in (QMediaPlayer.MediaStatus.EndOfMedia,QMediaPlayer.MediaStatus.InvalidMedia): self.start_capture_music()
@@ -303,11 +314,13 @@ class Window(QWidget):
 
     def hide_sniffy(self,hidden):
         self.sniffy.set_hidden(hidden)
-        if self.docked: self.sniffy_slot.setVisible(not hidden)
+        if self.sniffy.parentWidget() is self.update_sniffy_slot: self.update_sniffy_slot.setVisible(not hidden)
+        elif self.docked: self.sniffy_slot.setVisible(not hidden)
 
     def show_tips(self):
         self.hide_sniffy_action.setChecked(False); self.sniffy.show_tips()
-        if self.docked: self.sniffy_slot.show()
+        if self.sniffy.parentWidget() is self.update_sniffy_slot: self.update_sniffy_slot.show()
+        elif self.docked: self.sniffy_slot.show()
 
     def refresh_mute_button(self):
         self.mute_button.setText('[ UNMUTE SOUND ]' if self.music_output.isMuted() else '[ MUTE SOUND ]')
@@ -438,7 +451,7 @@ class Window(QWidget):
                 self.refresh_export_gate()
                 self.sniffy_target = self.save if self.save.isVisible() else self.naming
                 if self.save.isVisible() and self.stage != 'error':
-                    self.stage = 'quality'; self.export_quip()
+                    self.stage = 'quality'; self.dock_sniffy(True); self.export_quip()
             else:
                 self.sniffy_target = self.storage_label
                 self.stage = 'storage'
@@ -461,6 +474,7 @@ class Window(QWidget):
         try: filename(source)
         except Exception as e: return self.error(str(e))
         self.stage = 'capture'; self.clear_button.setEnabled(False)
+        self.dock_sniffy(True)
         self.busy = True; self.cancel_event.clear(); self.save.hide(); self.done.hide()
         self.input.setEnabled(False); self.sniff_button.setEnabled(False); self.quality.setEnabled(False)
         self.cancel_button.setEnabled(True); self.progress_bar.setValue(0); self.telemetry.setText('Starting capture…'); self.reveal(self.capture_panel)
@@ -492,7 +506,11 @@ class Window(QWidget):
         self.status.setText('[ capture ] ' + result.state.lower())
         self.completed.setText(f'{headline}\n\n{Path(path).name}\n{Path(path).stat().st_size/1024**3:.2f} GB\n{result.details}')
         self.play.setVisible(bool(vlc_path())); self.reveal(self.done); QApplication.alert(self,5000)
-        self.sniffy.say('Saved, but the source hiccupped. Diagnostics have the details.' if result.state != 'Success' else 'Bagged it. No stationery was harmed.')
+        self.dock_sniffy(True)
+        line = choose_line(COMPLETION_LINES,self.settings.value('last_completion_line',''))
+        self.settings.setValue('last_completion_line',line)
+        warning = 'SOURCE READ WARNINGS. Diagnostics have the details.\n' if result.state != 'Success' else ''
+        self.sniffy.say(warning+line,force=True)
 
     def refresh_folder(self): self.folder_label.setText('EXPORTS → ' + self.folder)
     def choose_folder(self):
@@ -519,12 +537,26 @@ class Window(QWidget):
         def success(release):
             if release:
                 self.release = release; self.update_button.setText('[ UPDATE AVAILABLE ] ' + release['tag_name']); self.update_button.show()
+                self.update_pending = True; self.show_update_sniffy()
                 if manual: self.show_release()
             elif manual: QMessageBox.information(self,'Updates','You have the latest release.')
         def failure(message):
             if manual:
                 self.sounds.play('error'); QMessageBox.warning(self,'Updates',message)
         self.job(lambda:latest_release(repo),success,failure)
+
+    def show_update_sniffy(self):
+        # Finish the capture conversation before bringing up software updates.
+        if self.busy or self.closing or self.stage in ('capture','error','complete'): return
+        self.sniffy_slot_layout.removeWidget(self.sniffy); self.sniffy_slot.hide()
+        self.update_sniffy_layout.addWidget(self.sniffy)
+        self.sniffy.setMinimumWidth(0); self.sniffy.setMaximumWidth(16777215)
+        self.docked = True
+        self.stage = 'update'
+        self.update_sniffy_slot.setVisible(not self.settings.value('hide_sniffy',False,type=bool))
+        line = choose_line(UPDATE_LINES,self.settings.value('last_update_line',''))
+        self.settings.setValue('last_update_line',line); self.update_pending = False
+        self.sniffy.say(line,force=True)
     def show_release(self):
         dialog = QMessageBox(self); dialog.setWindowTitle('StinkSNIFFER update'); dialog.setText(self.release['tag_name'])
         dialog.setInformativeText((self.release.get('body') or 'No release notes provided.')[:12000]); dialog.setTextFormat(Qt.TextFormat.PlainText)

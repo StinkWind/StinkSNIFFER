@@ -137,7 +137,8 @@ class SniffyCompanion(QWidget):
         self.settings.setValue('tips_seen',True); self.tip_open = False; self.dismiss.hide()
         self.say('Understood. Folding myself into the system tray emotionally.')
 
-    def say(self,text):
+    def say(self,text,force=False):
+        if force: self.tip_open = False
         if self.tip_open or self.settings.value('hide_sniffy',False,type=bool): return
         self.dialogue.setText('SNIFFY  //  '+text); self.dismiss.hide(); self.bubble.show()
         QTimer.singleShot(0,self.fit_dialogue)
