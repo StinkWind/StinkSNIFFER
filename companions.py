@@ -33,7 +33,11 @@ class GlassShell(QWidget):
         self.watermark.start()
 
     def on_frame(self, index):
-        self.frame = self.watermark.currentImage()
+        self.frame = self.watermark.currentImage().convertToFormat(QImage.Format.Format_ARGB32)
+        # The GIF has a solid black matte. Qt's native mask removes it without
+        # changing the pixel colours, frame timings or transparency slider.
+        mask = self.frame.createMaskFromColor(QColor(0,0,0).rgba(),Qt.MaskMode.MaskOutColor)
+        self.frame.setAlphaChannel(mask)
         self.update()
 
     def set_transparency(self, value):
