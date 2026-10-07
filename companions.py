@@ -1,10 +1,20 @@
 """Local-only visual layers and Sniffy's compact onboarding."""
-from PySide6.QtCore import Qt, QUrl, QRectF, QRect, QTimer, Signal, QVariantAnimation, QEasingCurve
-from PySide6.QtGui import QPainter, QPainterPath, QColor, QMovie, QPixmap, QImage
+from PySide6.QtCore import Qt, QUrl, QRectF, QRect, QTimer, Signal, QVariantAnimation, QEasingCurve, QSize
+from PySide6.QtGui import QPainter, QPainterPath, QColor, QMovie, QPixmap, QImage, QIcon, QDesktopServices, QTextDocument
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton
 from PySide6.QtMultimedia import QMediaPlayer, QVideoSink
 from core import ROOT
-import math, time
+import math, time, html
+
+YOUTUBE_URL = 'https://www.youtube.com/@TheStinkWind'
+
+def pixel_youtube_icon():
+    pixmap = QPixmap(20,14); pixmap.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(pixmap)
+    painter.fillRect(2,0,16,14,QColor('#e54040')); painter.fillRect(0,2,20,10,QColor('#e54040'))
+    for x,y,width,height in ((8,3,2,8),(10,4,2,6),(12,5,2,4),(14,6,2,2)):
+        painter.fillRect(x,y,width,height,QColor('#ffffff'))
+    painter.end(); return QIcon(pixmap)
 
 class PixelEye(QWidget):
     def __init__(self,parent=None):
@@ -118,7 +128,16 @@ class SniffyCompanion(QWidget):
         self.bubble = QWidget(objectName='sniffyBubble')
         layout = QVBoxLayout(self.bubble); layout.setContentsMargins(9,7,9,7); layout.setSpacing(6)
         self.dialogue = QLabel(); self.dialogue.setWordWrap(True); self.dialogue.setTextFormat(Qt.TextFormat.PlainText)
+        self.dialogue.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+        self.dialogue.linkActivated.connect(lambda _url:self.open_channel())
         layout.addWidget(self.dialogue)
+        self.channel_link = QPushButton('YouTube: @TheStinkWind ↗',objectName='sniffyYouTube')
+        self.channel_link.setIcon(pixel_youtube_icon()); self.channel_link.setIconSize(QSize(20,14))
+        self.channel_link.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.channel_link.setToolTip(YOUTUBE_URL); self.channel_link.setAccessibleName('Visit TheStinkWind on YouTube')
+        self.channel_link.setStyleSheet('QPushButton { background:transparent; border:none; padding:2px 0; font-size:11px; text-decoration:underline; } QPushButton:hover {color:white; background:rgba(255,255,255,12);}')
+        self.channel_link.clicked.connect(self.open_channel)
+        layout.addWidget(self.channel_link,0,Qt.AlignmentFlag.AlignLeft); self.channel_link.hide()
         self.dismiss = QPushButton('[ GOT IT ]'); self.dismiss.clicked.connect(self.dismiss_tip)
         layout.addWidget(self.dismiss,0,Qt.AlignmentFlag.AlignRight)
         row.addWidget(self.bubble,1)
@@ -130,6 +149,7 @@ class SniffyCompanion(QWidget):
     def show_tips(self):
         self.setVisible(True); self.settings.setValue('hide_sniffy',False)
         self.tip_open = True; self.timer.stop(); self.dismiss.show(); self.bubble.show()
+        self.channel_link.hide(); self.dialogue.setTextFormat(Qt.TextFormat.PlainText)
         self.dialogue.setText("SNIFFY\nLooks like you're trying to save a stream. Legally, I'm a skull.\n\nPaste an M3U8 or enter a Kick name → SNIFF → pick a size → SAVE.")
         QTimer.singleShot(0,self.fit_dialogue)
 
@@ -137,9 +157,15 @@ class SniffyCompanion(QWidget):
         self.settings.setValue('tips_seen',True); self.tip_open = False; self.dismiss.hide()
         self.say('Understood. Folding myself into the system tray emotionally.')
 
-    def say(self,text,force=False):
+    def open_channel(self): QDesktopServices.openUrl(QUrl(YOUTUBE_URL))
+
+    def say(self,text,force=False,youtube=False):
         if force: self.tip_open = False
         if self.tip_open or self.settings.value('hide_sniffy',False,type=bool): return
+        self.channel_link.setVisible(youtube)
+        self.dialogue.setTextFormat(Qt.TextFormat.RichText if youtube else Qt.TextFormat.PlainText)
+        if youtube:
+            text = html.escape(text).replace('\n','<br>').replace('@thestinkwind',f'<a href="{YOUTUBE_URL}" style="color:#ededed;text-decoration:underline;">@TheStinkWind</a>')
         self.dialogue.setText('SNIFFY  //  '+text); self.dismiss.hide(); self.bubble.show()
         QTimer.singleShot(0,self.fit_dialogue)
         self.spoken.emit()
@@ -147,6 +173,7 @@ class SniffyCompanion(QWidget):
     def quiet(self):
         if not self.tip_open:
             self.dialogue.setText('SNIFFY'); self.dismiss.hide(); self.bubble.hide()
+            self.channel_link.hide()
 
     def resizeEvent(self,event):
         super().resizeEvent(event)
@@ -155,7 +182,12 @@ class SniffyCompanion(QWidget):
     def fit_dialogue(self):
         if not self.bubble.isVisible(): return
         width=max(120,self.width()-self.sprite.width()-30)
-        height=self.dialogue.fontMetrics().boundingRect(QRect(0,0,width,10000),Qt.TextFlag.TextWordWrap,self.dialogue.text()).height()
+        if self.dialogue.textFormat() == Qt.TextFormat.RichText:
+            document = QTextDocument(); document.setDocumentMargin(0); document.setDefaultFont(self.dialogue.font())
+            document.setHtml(self.dialogue.text()); document.setTextWidth(width)
+            height = math.ceil(document.size().height())
+        else:
+            height=self.dialogue.fontMetrics().boundingRect(QRect(0,0,width,10000),Qt.TextFlag.TextWordWrap,self.dialogue.text()).height()
         self.dialogue.setMinimumHeight(height+4)
 
     def set_hidden(self,hidden):

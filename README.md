@@ -1,8 +1,8 @@
-# StinkSNIFFER v0.5.1
+# StinkSNIFFER v0.5.2
 
 [Download StinkSNIFFER for Windows](https://github.com/StinkWind/StinkSNIFFER/releases/latest)
 
-Under **Assets**, choose **StinkSNIFFER-v0.5.1-Windows.zip**. Extract the ZIP, open the StinkSNIFFER folder and run **StinkSNIFFER.exe**. The “Source code” downloads are for developers.
+Under **Assets**, choose **StinkSNIFFER-v0.5.2-Windows.zip**. Extract the ZIP, open the StinkSNIFFER folder and run **StinkSNIFFER.exe**. The “Source code” downloads are for developers.
 
 Run `StinkSNIFFER.exe` in the portable folder. Keep its `_internal` folder beside it. Python and FFmpeg installation are not required for the packaged build.
 
@@ -21,6 +21,7 @@ Exports default to Windows' Videos folder under `StinkSNIFFER`. Options changes 
 - Filenames: `💀StreamerName_YYYY-MM-DD💀.mp4`, using the VOD live date. Duplicates add `_2`, `_3`, etc. before the closing skull. If direct HLS links lack streamer/date metadata, enter the actual name/date before SAVE becomes available.
 - GitHub update checks default to `StinkWind/StinkSNIFFER` on launch; release notes and a user-confirmed release-page download are supported.
 - Completion includes one of ten Sniffy lines and an optional YouTube channel button. Source-read warnings remain explicit. Five update reminders place Sniffy beside the update button without interrupting capture; these banks avoid consecutive repeats across launches.
+- The completion bubble includes a clickable channel handle and a labelled pixel YouTube link. The bottom row adds Upload to YouTube beside Open Folder and Play in VLC; it opens the browser upload page, where you select the saved MP4.
 
 ## Reliability
 

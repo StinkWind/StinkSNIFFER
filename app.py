@@ -164,10 +164,12 @@ class Window(QWidget):
         self.completed = QLabel(); self.completed.setWordWrap(True); done_layout.addWidget(self.completed)
         actions = QHBoxLayout(); open_btn = QPushButton('Open Folder'); open_btn.clicked.connect(self.open_folder); actions.addWidget(open_btn)
         self.play = QPushButton('Play in VLC'); self.play.clicked.connect(self.play_vlc); actions.addWidget(self.play); done_layout.addLayout(actions); layout.addWidget(self.done)
-        self.youtube_button = QPushButton('[ VISIT @THESTINKWIND ]')
-        self.youtube_button.setToolTip('YouTube archives / meme documentaries')
-        self.youtube_button.clicked.connect(lambda:QDesktopServices.openUrl(QUrl('https://www.youtube.com/@TheStinkWind')))
-        done_layout.addWidget(self.youtube_button)
+        self.youtube_button = self.sniffy.channel_link
+        self.upload_button = QPushButton('[ UPLOAD TO YOUTUBE ↗ ]')
+        self.upload_button.setToolTip('Open your YouTube upload page, then select the saved MP4')
+        self.upload_button.setIcon(self.sniffy.channel_link.icon())
+        self.upload_button.clicked.connect(lambda:QDesktopServices.openUrl(QUrl('https://www.youtube.com/upload')))
+        actions.addWidget(self.upload_button)
         body.addStretch()
         self.folder_label = QLabel(objectName='faint'); self.folder_label.setWordWrap(True); layout.addWidget(self.folder_label); self.refresh_folder()
         for w in (self.card,self.save,self.capture_panel,self.done,self.storage_label): w.hide()
@@ -523,7 +525,7 @@ class Window(QWidget):
         line = choose_line(COMPLETION_LINES,self.settings.value('last_completion_line',''))
         self.settings.setValue('last_completion_line',line)
         warning = 'SOURCE READ WARNINGS. Diagnostics have the details.\n' if result.state != 'Success' else ''
-        self.sniffy.say(warning+line,force=True)
+        self.sniffy.say(warning+line,force=True,youtube=True)
 
     def refresh_folder(self): self.folder_label.setText('EXPORTS → ' + self.folder)
     def choose_folder(self):
