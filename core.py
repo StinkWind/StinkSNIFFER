@@ -62,12 +62,14 @@ def storage_check(folder, estimated):
     return {'estimated': estimated, 'free': free, 'required': required, 'sufficient': free >= required}
 
 def classify_completion(code, usable, log, output_duration, expected_duration):
-    if code != 0 or not usable: return 'Failed'
+    if not usable: return 'Failed'
     text = '\n'.join(log).lower()
     warnings = any(word in text for word in ('i/o error', 'input/output error', 'error during demuxing',
         'failed to open segment', 'failed to reload', 'http error', 'connection reset', 'connection timed out',
         'will reconnect', 'retrying', 'corrupt', 'packet corrupt', 'error when loading', 'end of file', 'error reading'))
     short = expected_duration and output_duration < expected_duration - max(3, expected_duration*.005)
+    fatal_output = any(word in text for word in ('no space left', 'error writing', 'error muxing', 'error closing', 'error opening output', 'permission denied'))
+    if fatal_output or (code != 0 and not warnings): return 'Failed'
     return 'Success with source/read warnings' if warnings or short else 'Success'
 
 def binary(name):
@@ -232,7 +234,10 @@ def capture(source, variant, folder, progress, cancel):
     else:
         command += ['-map', '0:v:0', '-map', '0:a:0?']
     command += ['-c', 'copy', '-progress', 'pipe:1', '-stats_period', '0.5', str(partial)]
-    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, creationflags=FLAGS)
+    try:
+        proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace', creationflags=FLAGS)
+    except Exception:
+        logfile.close(); raise
     def errors():
         for line in proc.stderr:
             # Remove signed URL query strings from diagnostic logs.
@@ -267,8 +272,6 @@ def capture(source, variant, folder, progress, cancel):
         reader.join(2)
         if cancel.is_set():
             raise ValueError('Capture cancelled. Partial file removed.')
-        if code:
-            raise ValueError('Capture failed. See Options → Diagnostics. ' + ' / '.join(log[-3:]))
         if not partial.exists() or partial.stat().st_size == 0:
             raise ValueError('FFmpeg produced an empty file.')
         check = subprocess.run([binary('ffprobe'), '-v', 'error', '-show_streams', '-show_format', '-of', 'json', str(partial)],
@@ -282,11 +285,14 @@ def capture(source, variant, folder, progress, cancel):
         usable = usable and validation.returncode == 0
         logfile.flush()
         state_name = classify_completion(code, usable, [log_path.read_text(encoding='utf-8')], duration, source.duration)
-        if state_name == 'Failed': raise ValueError('Capture failed MP4 validation. See Options → Diagnostics.')
+        if state_name == 'Failed': raise ValueError('Capture failed. See Options → Diagnostics. ' + ' / '.join(log[-3:]))
         partial.rename(destination)
         details = f'Saved {clock(duration)} of {clock(source.duration)}. Some source segments may be missing.' if state_name != 'Success' else ''
         logfile.write(f'\nState: {state_name}\nDuration: {duration} / {source.duration}\n')
         return CaptureResult(str(destination), state_name, details, str(log_path))
+    except Exception as e:
+        logfile.write(f'\nState: Failed\n{e}\n')
+        raise
     finally:
         if proc.poll() is None:
             proc.kill()

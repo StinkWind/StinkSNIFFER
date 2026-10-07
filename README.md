@@ -11,7 +11,7 @@ Exports default to Windows' Videos folder under `StinkSNIFFER`. Options changes 
 - Stream copy/remux, no export transcoding.
 - Each HTTP connection: up to four retries, maximum 30 seconds reconnect delay; transient 408/429/500/502/503/504 responses and network connection errors. Normal EOF is not retried.
 - HLS segment retries: three. Input read timeout: 15 seconds. No whole-job restart loop.
-- Completion states: Success, Success with source/read warnings, Failed. Zero-exit finalized MP4s are checked with FFprobe and a decoded frame. Read errors, retries, corrupt-packet reports, and short output trigger the warning state; usable MP4s are retained. This is a usability check, not a full-file integrity guarantee.
+- Completion states: Success, Success with source/read warnings, Failed. Finalized MP4s are checked with FFprobe and a decoded frame. Read errors, retries, corrupt-packet reports, and short output trigger the warning state; usable MP4s are retained, including nonzero exits attributable to source reads. Output/muxing/disk errors still fail. This is a usability check, not a full-file integrity guarantee.
 - Failed/cancelled incomplete files are removed. Existing exports are never overwritten.
 - Full FFmpeg warning/error details in `%LOCALAPPDATA%\StinkSNIFFER\diagnostics`; signed URL query strings are redacted.
 - Estimated bytes = aggregate rendition bitrate (bits/s) × duration / 8. Master BANDWIDTH already includes associated audio. Where missing, three segment sizes are sampled, with separate audio included and an additional conservative allowance. If no safe estimate exists, SAVE remains unavailable.
