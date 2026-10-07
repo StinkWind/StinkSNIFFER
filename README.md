@@ -1,4 +1,4 @@
-# StinkSNIFFER v0.2.0
+# StinkSNIFFER v0.4.0
 
 Run `StinkSNIFFER.exe` in the portable folder. Keep its `_internal` folder beside it. Python and FFmpeg installation are not required for the packaged build.
 
@@ -8,10 +8,12 @@ Exports default to Windows' Videos folder under `StinkSNIFFER`. Options changes 
 
 ## Interface / Sniffy
 
-- The window stays the same size. SNIFF sits inside the source bar.
-- Options → Transparency: 0–100%, default 0 (fully opaque). The charcoal shell and silent looping video watermark fade together. Controls, text, and Sniffy remain fully opaque.
+- Taller window with storage, SAVE and progress outside the scrolling preview. SNIFF and the × clear-source button sit inside the source bar. Clear retains history/preferences and is disabled during capture.
+- The main transparency slider has a pulsing pixel eye: 0–100%, default 0 (fully opaque). The charcoal shell and looping skull GIF fade together. Controls, text, and Sniffy remain fully opaque. User-selected transparency is remembered.
 - Sniffy is an animated pixel skull with a transparent matte. His compact first-launch speech bubble explains the capture flow, with occasional paperclip references. GOT IT remembers dismissal; Options → Show tips / Hide Sniffy restores or hides him.
-- Saving starts the supplied music at 10% volume, once per capture. The progress section has MUTE/UNMUTE; the preference persists. Completion, errors, and cancellation stop the music.
+- Sniffy has reserved space above storage details. Speech persists; when export is ready, ten idle seconds trigger a small bounce and another non-repeating export remark. Capture/error messages remain relevant.
+- SAVE starts export immediately while GLITCH LAUGH's extracted audio plays, followed by the supplied music. Startup, shutdown, speech and error cues play softly. Options → Mute all sounds and the progress MUTE/UNMUTE share one remembered setting. Completion, errors and cancellation stop capture audio.
+- Recent streams stores five inspected sources by title, re-inspects selected links, and explains their typical ~30-day expiry. Each launch starts with an empty source and preview.
 - Filenames: `💀StreamerName_YYYY-MM-DD💀.mp4`, using the VOD live date. Duplicates add `_2`, `_3`, etc. before the closing skull. If direct HLS links lack streamer/date metadata, enter the actual name/date before SAVE becomes available.
 - GitHub update checks default to `StinkWind/StinkSNIFFER` on launch; release notes and a user-confirmed release-page download are supported.
 
@@ -31,6 +33,6 @@ Exports default to Windows' Videos folder under `StinkSNIFFER`. Options changes 
 
 `app.py`, `core.py`, `requirements.txt`, `build.ps1`, `assets`, and `bin` contain the standalone project. Install Python 3.14, then run `build.ps1`. FFmpeg/FFprobe are included from the locally installed Gyan FFmpeg build. FFmpeg redistribution terms and corresponding source: https://www.gyan.dev/ffmpeg/builds/ and https://ffmpeg.org/legal.html. Cascadia Mono is the exact GlassChat font, converted from its WOFF2 asset, under the SIL Open Font License: https://github.com/microsoft/cascadia-code.
 
-The source repository excludes the user-supplied media and FFmpeg binaries. For a rebuild, supply `assets/media/watermark.mp4`, `assets/media/capture-music.mp3`, `assets/media/sniffy.gif`, and `bin/ffmpeg.exe` / `bin/ffprobe.exe`. The portable release includes them. Windows 10/11 is required; the build script avoids a conflicting Conda ICU DLL.
+The source repository excludes the user-supplied media and FFmpeg binaries. For a rebuild, supply `assets/media/watermark.gif`, `capture-music.mp3`, `sniffy.gif`, `laugh.wav`, `speech.wav`, `error.wav`, `startup.wav`, `shutdown.wav` in the same media folder, and `bin/ffmpeg.exe` / `bin/ffprobe.exe`. The portable release includes them. Windows 10/11 is required; the build script avoids a conflicting Conda ICU DLL.
 
 No telemetry, hosted backend, or OBELISK changes. Network traffic is limited to the requested source, Kick resolution/thumbnail requests, and configured GitHub update checks.

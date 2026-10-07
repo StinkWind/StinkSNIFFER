@@ -7,7 +7,7 @@ from datetime import datetime
 import m3u8
 from curl_cffi import requests
 
-VERSION = '0.3.0'
+VERSION = '0.4.0'
 RELEASE_REPO = 'StinkWind/StinkSNIFFER'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
 HEADERS = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://kick.com/'}

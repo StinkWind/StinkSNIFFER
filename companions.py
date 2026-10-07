@@ -1,9 +1,26 @@
 """Local-only visual layers and Sniffy's compact onboarding."""
-from PySide6.QtCore import Qt, QUrl, QRectF, QRect, QTimer
+from PySide6.QtCore import Qt, QUrl, QRectF, QRect, QTimer, Signal, QVariantAnimation, QEasingCurve
 from PySide6.QtGui import QPainter, QPainterPath, QColor, QMovie, QPixmap, QImage
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushButton
 from PySide6.QtMultimedia import QMediaPlayer, QVideoSink
 from core import ROOT
+import math, time
+
+class PixelEye(QWidget):
+    def __init__(self,parent=None):
+        super().__init__(parent)
+        self.setFixedSize(18,16); self.setToolTip('Transparency')
+        self.started = time.monotonic()
+        self.timer = QTimer(self); self.timer.timeout.connect(self.update); self.timer.start(80)
+
+    def paintEvent(self,event):
+        painter = QPainter(self)
+        brightness = int(150+55*(1+math.sin((time.monotonic()-self.started)*math.pi))/2)
+        painter.setPen(Qt.PenStyle.NoPen); painter.setBrush(QColor(brightness,brightness,brightness))
+        pixels = ['00011111000','01100000110','10000100001','01100000110','00011111000']
+        for y,row in enumerate(pixels):
+            for x,pixel in enumerate(row):
+                if pixel=='1': painter.drawRect(3+x,5+y,1,1)
 
 class GlassShell(QWidget):
     def __init__(self):
@@ -34,7 +51,10 @@ class GlassShell(QWidget):
         if not self.frame.isNull() and alpha:
             # Fit, don't stretch or crop. Draw behind every child widget.
             size = self.frame.size().scaled(self.size(),Qt.AspectRatioMode.KeepAspectRatio)
-            target = QRectF((self.width()-size.width())/2,(self.height()-size.height())/2,size.width(),size.height())
+            # Centre the artwork in the working area beneath the source controls.
+            top = getattr(self,'work_area_top',180)
+            centre = top+(self.height()-top-35)/2
+            target = QRectF((self.width()-size.width())/2,centre-size.height()/2,size.width(),size.height())
             painter.setOpacity(.085*alpha)
             painter.drawImage(target,self.frame)
         painter.setOpacity(1); painter.setClipping(False)
@@ -46,6 +66,10 @@ class SniffySprite(QWidget):
         self.setFixedSize(36,36)
         self.pixmap = QPixmap()
         self.frame_cache = {}
+        self.bounce_offset = 0
+        self.bounce_animation = QVariantAnimation(self)
+        self.bounce_animation.setDuration(420); self.bounce_animation.setStartValue(0.0); self.bounce_animation.setEndValue(1.0)
+        self.bounce_animation.valueChanged.connect(self.bounce_frame)
         self.movie = QMovie(str(ROOT/'assets/media/sniffy.gif'))
         self.movie.setCacheMode(QMovie.CacheMode.CacheAll)
         self.movie.frameChanged.connect(self.on_frame)
@@ -71,10 +95,16 @@ class SniffySprite(QWidget):
         # Nearest-neighbour scaling keeps the original pixel edges sharp.
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform,False)
         size = self.pixmap.size().scaled(self.size(),Qt.AspectRatioMode.KeepAspectRatio)
-        painter.drawPixmap((self.width()-size.width())//2,(self.height()-size.height())//2,
+        painter.drawPixmap((self.width()-size.width())//2,(self.height()-size.height())//2-self.bounce_offset,
             self.pixmap.scaled(size,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.FastTransformation))
 
+    def bounce_frame(self,value):
+        self.bounce_offset = round(5*math.sin(float(value)*math.pi)); self.update()
+
+    def bounce(self): self.bounce_animation.start()
+
 class SniffyCompanion(QWidget):
+    spoken = Signal()
     def __init__(self,settings,parent=None):
         super().__init__(parent)
         self.settings = settings
@@ -88,7 +118,7 @@ class SniffyCompanion(QWidget):
         self.dismiss = QPushButton('[ GOT IT ]'); self.dismiss.clicked.connect(self.dismiss_tip)
         layout.addWidget(self.dismiss,0,Qt.AlignmentFlag.AlignRight)
         row.addWidget(self.bubble,1)
-        self.timer = QTimer(self); self.timer.setSingleShot(True); self.timer.timeout.connect(self.quiet)
+        self.timer = QTimer(self)  # Dialogue persists; the window owns idle behaviour.
         self.setVisible(not settings.value('hide_sniffy',False,type=bool))
         if not settings.value('tips_seen',False,type=bool): self.show_tips()
         else: self.quiet()
@@ -107,7 +137,7 @@ class SniffyCompanion(QWidget):
         if self.tip_open or self.settings.value('hide_sniffy',False,type=bool): return
         self.dialogue.setText('SNIFFY  //  '+text); self.dismiss.hide(); self.bubble.show()
         QTimer.singleShot(0,self.fit_dialogue)
-        self.timer.start(8000)
+        self.spoken.emit()
 
     def quiet(self):
         if not self.tip_open:
