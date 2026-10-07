@@ -1,8 +1,8 @@
-# StinkSNIFFER v0.5.0
+# StinkSNIFFER v0.5.1
 
 [Download StinkSNIFFER for Windows](https://github.com/StinkWind/StinkSNIFFER/releases/latest)
 
-Under **Assets**, choose **StinkSNIFFER-v0.5.0-Windows.zip**. Extract the ZIP, open the StinkSNIFFER folder and run **StinkSNIFFER.exe**. The “Source code” downloads are for developers.
+Under **Assets**, choose **StinkSNIFFER-v0.5.1-Windows.zip**. Extract the ZIP, open the StinkSNIFFER folder and run **StinkSNIFFER.exe**. The “Source code” downloads are for developers.
 
 Run `StinkSNIFFER.exe` in the portable folder. Keep its `_internal` folder beside it. Python and FFmpeg installation are not required for the packaged build.
 

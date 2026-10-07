@@ -1,7 +1,7 @@
 import os, sys, subprocess, threading, random
 from pathlib import Path
 from PySide6.QtCore import Qt, QThread, Signal, QSettings, QStandardPaths, QUrl, QTimer, QPropertyAnimation, QEasingCurve, QEvent, QPoint
-from PySide6.QtGui import QFont, QFontDatabase, QPixmap, QDesktopServices, QColor, QIcon
+from PySide6.QtGui import QFont, QFontDatabase, QPixmap, QDesktopServices, QColor, QIcon, QPainter
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
     QComboBox, QProgressBar, QFileDialog, QMenu, QMessageBox, QInputDialog, QGraphicsOpacityEffect, QScrollArea,
     QSlider, QSpinBox, QWidgetAction, QSystemTrayIcon)
@@ -198,7 +198,7 @@ class Window(QWidget):
         ''')
         for control in (self.input,self.history,self.quality,self.streamer_name,self.live_date,self.save): control.installEventFilter(self)
         icon = QIcon(str(ROOT/'assets/sniffy.ico')); self.setWindowIcon(icon)
-        self.tray = QSystemTrayIcon(icon,self); self.tray.setToolTip('StinkSNIFFER')
+        self.tray = QSystemTrayIcon(self.tray_icon(icon),self); self.tray.setToolTip('StinkSNIFFER')
         tray_menu = QMenu(self); tray_menu.addAction('Show StinkSNIFFER',self.restore_window); tray_menu.addAction('Exit',self.close)
         self.tray.setContextMenu(tray_menu); self.tray.activated.connect(lambda reason:self.restore_window() if reason==QSystemTrayIcon.ActivationReason.DoubleClick else None)
         if QSystemTrayIcon.isSystemTrayAvailable(): self.tray.show()
@@ -209,6 +209,19 @@ class Window(QWidget):
 
     def restore_window(self):
         self.showNormal(); self.raise_(); self.activateWindow()
+
+    @staticmethod
+    def tray_icon(icon):
+        result = QIcon()
+        # Windows chooses its tray slot size. Add transparent padding to reduce
+        # the visible skull by 15%, including common display-scaling sizes.
+        for size in (16,20,24,28,32,40,48,64):
+            canvas = QPixmap(size,size); canvas.fill(Qt.GlobalColor.transparent)
+            skull = icon.pixmap(round(size*.85),round(size*.85))
+            painter = QPainter(canvas)
+            painter.drawPixmap((size-skull.width())//2,(size-skull.height())//2,skull)
+            painter.end(); result.addPixmap(canvas)
+        return result
 
     def refresh_history(self):
         self.history.blockSignals(True); self.history.clear(); self.history.addItem('Recent streams…',None)
