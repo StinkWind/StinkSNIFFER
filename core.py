@@ -7,7 +7,8 @@ from datetime import datetime
 import m3u8
 from curl_cffi import requests
 
-VERSION = '0.1.0'
+VERSION = '0.2.0'
+RELEASE_REPO = 'StinkWind/StinkSNIFFER'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
 HEADERS = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://kick.com/'}
 FLAGS = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
@@ -162,8 +163,8 @@ def inspect(url, metadata=None):
                 thumb = r.stdout
         except subprocess.TimeoutExpired:
             pass
-    return Source(metadata.get('title') or 'Direct HLS capture', metadata.get('streamer') or urlparse(url).hostname,
-        metadata.get('date') or 'date unavailable', duration, variants, thumb, url)
+    return Source(metadata.get('title') or 'Direct HLS capture', metadata.get('streamer') or '',
+        metadata.get('date') or '', duration, variants, thumb, url)
 
 def resolve(value):
     value = value.strip()
@@ -194,17 +195,19 @@ def resolve(value):
             if isinstance(thumbnail, dict):
                 thumbnail = thumbnail.get('url') or thumbnail.get('src')
             return inspect(url, {'title': stream.get('session_title') or entry.get('session_title'), 'streamer': slug,
-                'date': str(detail.get('created_at') or entry.get('created_at') or '')[:10], 'thumbnail': thumbnail})
+                'date': str(stream.get('start_time') or entry.get('start_time') or detail.get('created_at') or entry.get('created_at') or '')[:10], 'thumbnail': thumbnail})
         except Exception as e:
             failures.append(str(e))
     raise ValueError('No completed accessible VOD could be resolved. Try a direct M3U8 URL. ' + (failures[-1] if failures else ''))
 
-def filename(source, variant):
-    name = f'{source.streamer}_{source.date}_{source.title}_{variant.height}p'
-    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name).strip(' .')[:160]
-    if name.split('.')[0].upper() in ('CON', 'PRN', 'AUX', 'NUL'):
-        name = '_' + name
-    return name + '.mp4'
+def filename(source, variant=None, duplicate=0):
+    streamer = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', source.streamer).strip(' .')[:100]
+    if not streamer: raise ValueError('Enter the streamer name before exporting.')
+    if not re.fullmatch(r'\d{4}-\d{2}-\d{2}',source.date): raise ValueError('Enter the date the VOD was live, as YYYY-MM-DD.')
+    try: datetime.strptime(source.date, '%Y-%m-%d')
+    except ValueError: raise ValueError('Enter the date the VOD was live, as YYYY-MM-DD.')
+    suffix = f'_{duplicate}' if duplicate else ''
+    return f'💀{streamer}_{source.date}{suffix}💀.mp4'
 
 def capture(source, variant, folder, progress, cancel):
     ffmpeg = binary('ffmpeg')
@@ -216,10 +219,9 @@ def capture(source, variant, folder, progress, cancel):
     if not storage['sufficient']:
         raise ValueError(f"INSUFFICIENT DISK SPACE. Need ~{storage['required']/1024**3:.1f} GB; available {storage['free']/1024**3:.1f} GB.")
     destination = folder / filename(source, variant)
-    base = destination.stem
-    index = 1
+    index = 2
     while destination.exists() or destination.with_suffix('.partial.mp4').exists():
-        destination = folder / f'{base}_{index}.mp4'
+        destination = folder / filename(source, variant, index)
         index += 1
     partial = destination.with_suffix('.partial.mp4')
     log = []
