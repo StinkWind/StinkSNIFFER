@@ -7,7 +7,7 @@ from datetime import datetime
 import m3u8
 from curl_cffi import requests
 
-VERSION = '0.4.0'
+VERSION = '0.4.1'
 RELEASE_REPO = 'StinkWind/StinkSNIFFER'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
 HEADERS = {'User-Agent': 'Mozilla/5.0', 'Referer': 'https://kick.com/'}
@@ -100,6 +100,7 @@ class Source:
     variants: list
     thumbnail: bytes = b''
     master: str = ''
+    thumbnail_url: str = ''
 
 def playlist(url):
     r = fetch(url)
@@ -164,7 +165,7 @@ def inspect(url, metadata=None):
         except subprocess.TimeoutExpired:
             pass
     return Source(metadata.get('title') or 'Direct HLS capture', metadata.get('streamer') or '',
-        metadata.get('date') or '', duration, variants, thumb, url)
+        metadata.get('date') or '', duration, variants, thumb, url, metadata.get('thumbnail') or '')
 
 def resolve(value):
     value = value.strip()

@@ -375,9 +375,16 @@ class Window(QWidget):
         self.storage_generation += 1
         for widget in (self.card,self.save,self.capture_panel,self.done,self.storage_label): widget.hide()
         self.status.setText('[ sniffing ] resolving metadata / inspecting HLS…')
+        self.thumbnail.clear(); self.thumbnail.setText('[ refreshing preview… ]')
         self.sniffy.say('Looking for your stream. The paperclip never managed that.')
         value = self.input.text(); self.pending_search = value
-        self.job(lambda: resolve(value), self.resolved)
+        entry = getattr(self,'history_entry',None)
+        if entry and entry.get('url') == value:
+            metadata = {'title':entry.get('title'), 'streamer':entry.get('streamer'),
+                'date':entry.get('date'), 'thumbnail':entry.get('thumbnail_url')}
+            self.job(lambda:inspect(value,metadata),self.resolved)
+        else:
+            self.job(lambda: resolve(value), self.resolved)
 
     def resolved(self, source):
         entry = getattr(self,'history_entry',None)
@@ -387,11 +394,12 @@ class Window(QWidget):
         self.stage = 'source'; self.clear_button.setEnabled(True); self.dock_sniffy(True)
         self.busy = False; self.input.setEnabled(True); self.sniff_button.setEnabled(True); self.source = source; self.estimated = None
         self.recent = [entry for entry in self.recent if entry.get('url') != source.master]
-        self.recent.insert(0,{'title':source.title or source.streamer or 'Unnamed stream','url':source.master,'streamer':source.streamer,'date':source.date,'searched':datetime.now().isoformat()})
+        self.recent.insert(0,{'title':source.title or source.streamer or 'Unnamed stream','url':source.master,'streamer':source.streamer,'date':source.date,'thumbnail_url':source.thumbnail_url,'searched':datetime.now().isoformat()})
         self.recent = self.recent[:5]; self.settings.setValue('history',json.dumps(self.recent)); self.refresh_history()
         self.title.setText(source.title); self.metadata.setText(f"{source.streamer or 'streamer unknown'} • {source.date or 'live date unknown'} • {clock(source.duration)}")
         self.naming.setVisible(not source.streamer or not source.date)
         self.streamer_name.setText(source.streamer); self.live_date.setText(source.date)
+        self.thumbnail.clear()
         pix = QPixmap(); pix.loadFromData(source.thumbnail)
         if not pix.isNull(): self.thumbnail.setPixmap(pix.scaled(410,230,Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation))
         else: self.thumbnail.setText('[ preview unavailable ]')

@@ -9,18 +9,18 @@ import math, time
 class PixelEye(QWidget):
     def __init__(self,parent=None):
         super().__init__(parent)
-        self.setFixedSize(18,16); self.setToolTip('Transparency')
+        self.setFixedSize(30,22); self.setToolTip('Transparency')
         self.started = time.monotonic()
         self.timer = QTimer(self); self.timer.timeout.connect(self.update); self.timer.start(80)
 
     def paintEvent(self,event):
         painter = QPainter(self)
-        brightness = int(150+55*(1+math.sin((time.monotonic()-self.started)*math.pi))/2)
+        brightness = int(90+165*(1+math.sin((time.monotonic()-self.started)*math.pi*1.3))/2)
         painter.setPen(Qt.PenStyle.NoPen); painter.setBrush(QColor(brightness,brightness,brightness))
         pixels = ['00011111000','01100000110','10000100001','01100000110','00011111000']
         for y,row in enumerate(pixels):
             for x,pixel in enumerate(row):
-                if pixel=='1': painter.drawRect(3+x,5+y,1,1)
+                if pixel=='1': painter.drawRect(4+x*2,6+y*2,2,2)
 
 class GlassShell(QWidget):
     def __init__(self):
