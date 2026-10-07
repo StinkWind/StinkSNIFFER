@@ -1,10 +1,10 @@
-import os, sys, subprocess, threading
+import os, sys, subprocess, threading, random
 from pathlib import Path
-from PySide6.QtCore import Qt, QThread, Signal, QSettings, QStandardPaths, QUrl, QTimer, QPropertyAnimation, QEasingCurve
-from PySide6.QtGui import QFont, QFontDatabase, QPixmap, QDesktopServices, QColor
+from PySide6.QtCore import Qt, QThread, Signal, QSettings, QStandardPaths, QUrl, QTimer, QPropertyAnimation, QEasingCurve, QEvent, QPoint
+from PySide6.QtGui import QFont, QFontDatabase, QPixmap, QDesktopServices, QColor, QIcon
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit,
     QComboBox, QProgressBar, QFileDialog, QMenu, QMessageBox, QInputDialog, QGraphicsOpacityEffect, QScrollArea,
-    QSlider, QSpinBox, QWidgetAction)
+    QSlider, QSpinBox, QWidgetAction, QSystemTrayIcon)
 from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
 from dataclasses import replace
 from companions import GlassShell, SniffyCompanion
@@ -37,7 +37,7 @@ class Window(QWidget):
         self.setWindowTitle('StinkSNIFFER')
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Window)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.resize(510, 730)
+        self.resize(510, min(900, QApplication.primaryScreen().availableGeometry().height()-40))
         self.setMinimumSize(440, 580)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(8,8,8,8)
@@ -52,19 +52,12 @@ class Window(QWidget):
         self.options = QPushButton('≡')
         self.options.setToolTip('Options')
         menu = QMenu(self)
-        transparency_menu = menu.addMenu('Transparency')
-        transparency_widget = QWidget()
-        transparency_layout = QVBoxLayout(transparency_widget); transparency_layout.setContentsMargins(12,10,12,10)
-        transparency_layout.addWidget(QLabel('0 = opaque  /  100 = transparent'))
-        transparency_row = QHBoxLayout()
-        self.transparency_slider = QSlider(Qt.Orientation.Horizontal); self.transparency_slider.setRange(0,100)
-        self.transparency_slider.setMinimumWidth(160)
-        self.transparency_value = QSpinBox(); self.transparency_value.setRange(0,100); self.transparency_value.setSuffix('%')
-        transparency_row.addWidget(self.transparency_slider); transparency_row.addWidget(self.transparency_value)
-        transparency_layout.addLayout(transparency_row)
-        transparency_action = QWidgetAction(self); transparency_action.setDefaultWidget(transparency_widget); transparency_menu.addAction(transparency_action)
+        # Transparency lives in the main status row.
+        self.transparency_slider = QSlider(Qt.Orientation.Horizontal)
+        self.transparency_slider.setRange(0,100); self.transparency_slider.setFixedWidth(110)
+        self.transparency_slider.setToolTip('Transparency: 0% opaque / 100% transparent')
+        self.transparency_value = QLabel('0%',objectName='muted'); self.transparency_value.setFixedWidth(34)
         self.transparency_slider.valueChanged.connect(self.set_transparency)
-        self.transparency_value.valueChanged.connect(self.transparency_slider.setValue)
         self.transparency_slider.setValue(max(0,min(100,self.settings.value('transparency',0,type=int))))
         self.shell.set_transparency(self.transparency_slider.value())
         menu.addSeparator()
@@ -88,16 +81,26 @@ class Window(QWidget):
         self.update_button = QPushButton(''); self.update_button.hide(); self.update_button.clicked.connect(self.show_release)
         layout.addWidget(self.update_button)
         self.status = QLabel('• Local capture  //  ready', objectName='muted')
-        self.status.setWordWrap(True); layout.addWidget(self.status)
-        layout.addWidget(QLabel('SOURCE', objectName='muted'))
+        self.status.setWordWrap(True)
+        status_row = QHBoxLayout(); status_row.addWidget(self.status,1)
+        status_row.addWidget(self.transparency_slider); status_row.addWidget(self.transparency_value)
+        layout.addLayout(status_row)
+        source_header = QHBoxLayout(); source_header.addWidget(QLabel('SOURCE',objectName='muted')); source_header.addStretch()
+        self.history = QComboBox(); self.history.setFixedWidth(210); self.history.setToolTip('VOD links often expire after ~30 days. Saved links are checked again.')
+        source_header.addWidget(self.history); layout.addLayout(source_header)
+        try: self.recent = json.loads(self.settings.value('history','[]'))[:5]
+        except (ValueError,TypeError): self.recent = []
+        self.refresh_history(); self.history.activated.connect(self.load_history)
         source_bar = QWidget(objectName='sourceBar'); source_row = QHBoxLayout(source_bar); source_row.setContentsMargins(0,0,5,0); source_row.setSpacing(0)
         self.input = QLineEdit(objectName='sourceInput'); self.input.setPlaceholderText('Kick username / M3U8 URL'); self.input.returnPressed.connect(self.sniff)
         source_row.addWidget(self.input,1)
         self.sniff_button = QPushButton('[ SNIFF ]'); self.sniff_button.clicked.connect(self.sniff)
         self.sniff_button.setObjectName('inlineSniff'); source_row.addWidget(self.sniff_button)
         layout.addWidget(source_bar)
-        self.sniffy = SniffyCompanion(self.settings,self); layout.addWidget(self.sniffy)
-        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        self.sniffy = SniffyCompanion(self.settings,self.shell)
+        self.sniffy_target = self.input; self.last_quip = None
+        self.follow_timer = QTimer(self); self.follow_timer.timeout.connect(self.position_sniffy); self.follow_timer.start(100)
+        self.scroll = scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         scroll.setStyleSheet('QScrollArea, QScrollArea > QWidget > QWidget {background: transparent; border: none;}')
         content = QWidget(); scroll.setWidget(content); body = QVBoxLayout(content); body.setContentsMargins(0,0,0,0); body.setSpacing(16)
         layout.addWidget(scroll, 1)
@@ -119,8 +122,8 @@ class Window(QWidget):
         card.addWidget(QLabel('QUALITY', objectName='muted'))
         self.quality = QComboBox(); self.quality.currentIndexChanged.connect(self.select_quality); card.addWidget(self.quality)
         body.addWidget(self.card)
-        self.storage_label = QLabel(objectName='muted'); self.storage_label.setWordWrap(True); body.addWidget(self.storage_label); self.storage_label.hide()
-        self.save = QPushButton('[ SAVE / EXPORT ]'); self.save.clicked.connect(self.export); body.addWidget(self.save)
+        self.storage_label = QLabel(objectName='muted'); self.storage_label.setWordWrap(True); layout.addWidget(self.storage_label); self.storage_label.hide()
+        self.save = QPushButton('[ SAVE / EXPORT ]'); self.save.clicked.connect(self.export); layout.addWidget(self.save)
         self.capture_panel = QWidget(); progress_layout = QVBoxLayout(self.capture_panel); progress_layout.setContentsMargins(0,0,0,0)
         self.progress_bar = QProgressBar(); self.progress_bar.setRange(0,1000); self.progress_bar.setTextVisible(False); progress_layout.addWidget(self.progress_bar)
         self.telemetry = QLabel(); self.telemetry.setWordWrap(True); progress_layout.addWidget(self.telemetry)
@@ -133,11 +136,11 @@ class Window(QWidget):
         self.music.setLoops(QMediaPlayer.Loops.Once)
         self.music.setSource(QUrl.fromLocalFile(str(ROOT/'assets/media/capture-music.mp3')))
         self.refresh_mute_button()
-        body.addWidget(self.capture_panel)
+        layout.addWidget(self.capture_panel)
         self.done = QWidget(); done_layout = QVBoxLayout(self.done); done_layout.setContentsMargins(0,0,0,0)
         self.completed = QLabel(); self.completed.setWordWrap(True); done_layout.addWidget(self.completed)
         actions = QHBoxLayout(); open_btn = QPushButton('Open Folder'); open_btn.clicked.connect(self.open_folder); actions.addWidget(open_btn)
-        self.play = QPushButton('Play in VLC'); self.play.clicked.connect(self.play_vlc); actions.addWidget(self.play); done_layout.addLayout(actions); body.addWidget(self.done)
+        self.play = QPushButton('Play in VLC'); self.play.clicked.connect(self.play_vlc); actions.addWidget(self.play); done_layout.addLayout(actions); layout.addWidget(self.done)
         body.addStretch()
         self.folder_label = QLabel(objectName='faint'); self.folder_label.setWordWrap(True); layout.addWidget(self.folder_label); self.refresh_folder()
         for w in (self.card,self.save,self.capture_panel,self.done,self.storage_label): w.hide()
@@ -166,10 +169,63 @@ class Window(QWidget):
             QMenu, QComboBox QAbstractItemView { background:#202124; color:#dedede; border:1px solid #444; padding:5px; selection-background-color:#444; }
             QScrollBar:vertical { width:5px; background:transparent; } QScrollBar::handle:vertical {background:#444;min-height:20px;}
         ''')
+        for control in (self.input,self.history,self.quality,self.streamer_name,self.live_date,self.save): control.installEventFilter(self)
+        icon = QIcon(str(ROOT/'assets/sniffy.ico')); self.setWindowIcon(icon)
+        self.tray = QSystemTrayIcon(icon,self); self.tray.setToolTip('StinkSNIFFER')
+        tray_menu = QMenu(self); tray_menu.addAction('Show StinkSNIFFER',self.restore_window); tray_menu.addAction('Exit',self.close)
+        self.tray.setContextMenu(tray_menu); self.tray.activated.connect(lambda reason:self.restore_window() if reason==QSystemTrayIcon.ActivationReason.DoubleClick else None)
+        if QSystemTrayIcon.isSystemTrayAvailable(): self.tray.show()
         if '--smoke-test' not in sys.argv: QTimer.singleShot(1000, self.check_updates)
 
+    def restore_window(self):
+        self.showNormal(); self.raise_(); self.activateWindow()
+
+    def refresh_history(self):
+        self.history.blockSignals(True); self.history.clear(); self.history.addItem('Recent streams…',None)
+        for entry in self.recent: self.history.addItem(entry.get('title','Unnamed stream'),entry)
+        self.history.blockSignals(False)
+
+    def load_history(self,index):
+        entry = self.history.itemData(index)
+        if not entry or self.busy: return
+        self.input.setText(entry['url']); self.history_entry = entry; self.sniff()
+        self.status.setText('[ checking saved link ] VOD links often expire after ~30 days.')
+
+    def eventFilter(self,watched,event):
+        if event.type() in (QEvent.Type.FocusIn,QEvent.Type.MouseButtonPress): self.sniffy_target = watched
+        return super().eventFilter(watched,event)
+
+    def position_sniffy(self):
+        if not hasattr(self,'sniffy') or not self.sniffy.isVisible(): return
+        target = self.sniffy_target
+        if not target.isVisible(): target = self.input
+        point = target.mapTo(self.shell,QPoint(0,target.height()))
+        width = min(350,self.shell.width()-44) if self.sniffy.bubble.isVisible() else 36
+        self.sniffy.setFixedWidth(width); self.sniffy.adjustSize()
+        x = max(8,min(self.shell.width()-width-8,point.x()))
+        y = max(70,min(self.shell.height()-self.sniffy.height()-24,point.y()+4))
+        # An overlay follows focus without changing layout or covering the active control.
+        if y < point.y() and self.sniffy.bubble.isVisible():
+            y = max(70,point.y()-target.height()-self.sniffy.height()-4)
+        self.sniffy.move(x,y); self.sniffy.raise_()
+
+    def export_quip(self):
+        lines = [
+            "Save it. Tomorrow's apology video needs a flashback.",
+            'Export the evidence. The donation goal can wait.',
+            'Go on. Preserve this important contribution to unemployment.',
+            'One small click for you. One permanent receipt for them.',
+            "They said ‘clip that.’ I've taken that personally.",
+            'Save before ‘out of context’ becomes the official statement.',
+            'The internet forgets. Your hard drive has other plans.',
+            'Another historic moment in asking strangers for rent.',
+            'Go on. Give the future reaction video some source material.',
+            "Looks like you're collecting receipts. Finally, my qualifications."]
+        self.last_quip = random.choice([line for line in lines if line != self.last_quip])
+        self.sniffy.say(self.last_quip)
+
     def set_transparency(self,value):
-        self.shell.set_transparency(value); self.transparency_value.setValue(value)
+        self.shell.set_transparency(value); self.transparency_value.setText(f'{value}%')
         self.settings.setValue('transparency',value)
 
     def show_tips(self):
@@ -220,6 +276,9 @@ class Window(QWidget):
         self.music.stop()
         self.busy = False; self.input.setEnabled(True); self.sniff_button.setEnabled(True); self.quality.setEnabled(True)
         self.cancel_button.setEnabled(True); self.capture_panel.hide()
+        if getattr(self,'history_entry',None):
+            message = 'Saved link could not be opened. VOD links often expire after ~30 days; search the streamer again. ' + message
+            self.history_entry = None
         self.status.setText('[ error ] ' + message)
         self.sniffy.say('Capture cancelled. No stationery was harmed.' if self.cancel_event.is_set() else "That didn't finish. Diagnostics have the details.")
         if self.source: self.select_quality()
@@ -232,11 +291,18 @@ class Window(QWidget):
         for widget in (self.card,self.save,self.capture_panel,self.done,self.storage_label): widget.hide()
         self.status.setText('[ sniffing ] resolving metadata / inspecting HLS…')
         self.sniffy.say('Looking for your stream. The paperclip never managed that.')
-        value = self.input.text()
+        value = self.input.text(); self.pending_search = value
         self.job(lambda: resolve(value), self.resolved)
 
     def resolved(self, source):
+        entry = getattr(self,'history_entry',None)
+        if entry and entry.get('url') == source.master:
+            source = replace(source,title=entry.get('title') or source.title,streamer=source.streamer or entry.get('streamer',''),date=source.date or entry.get('date',''))
+        self.history_entry = None
         self.busy = False; self.input.setEnabled(True); self.sniff_button.setEnabled(True); self.source = source; self.estimated = None
+        self.recent = [entry for entry in self.recent if entry.get('url') != source.master]
+        self.recent.insert(0,{'title':source.title or source.streamer or 'Unnamed stream','url':source.master,'streamer':source.streamer,'date':source.date,'searched':datetime.now().isoformat()})
+        self.recent = self.recent[:5]; self.settings.setValue('history',json.dumps(self.recent)); self.refresh_history()
         self.title.setText(source.title); self.metadata.setText(f"{source.streamer or 'streamer unknown'} • {source.date or 'live date unknown'} • {clock(source.duration)}")
         self.naming.setVisible(not source.streamer or not source.date)
         self.streamer_name.setText(source.streamer); self.live_date.setText(source.date)
@@ -255,6 +321,7 @@ class Window(QWidget):
                 self.quality.addItem(f'Native — {v.height}p',v); available.append(self.quality.count()-1)
         self.quality.setCurrentIndex(0); self.quality.blockSignals(False)
         self.status.setText(f'[ source confirmed ] {len(source.variants)} native renditions')
+        self.sniffy_target = self.quality
         self.reveal(self.card)
         self.sniffy.say("That's the one? Pick a size.")
 
@@ -273,7 +340,11 @@ class Window(QWidget):
             if storage['sufficient']:
                 self.storage_label.setText(f"Estimated size: ~{storage['estimated']/1024**3:.1f} GB\nFree space: {storage['free']/1024**3:.1f} GB")
                 self.refresh_export_gate()
+                self.sniffy_target = self.save if self.save.isVisible() else self.naming
+                if self.save.isVisible(): self.export_quip()
             else:
+                self.sniffy_target = self.storage_label
+                self.sniffy.say('Your drive needs more room before we collect these receipts.')
                 self.storage_label.setText(f"INSUFFICIENT DISK SPACE\nNeed ~{storage['required']/1024**3:.1f} GB\nAvailable {storage['free']/1024**3:.1f} GB")
         def failure(message):
             if generation == self.storage_generation: self.storage_label.setText('[ storage ] ' + message)
@@ -310,6 +381,7 @@ class Window(QWidget):
 
     def finished_capture(self, result):
         self.music.stop()
+        self.sniffy_target = self.done
         path = result.path
         self.busy = False; self.output = path; self.progress_bar.setValue(1000); self.capture_panel.hide()
         self.input.setEnabled(True); self.sniff_button.setEnabled(True); self.quality.setEnabled(True)
@@ -359,7 +431,7 @@ class Window(QWidget):
             self.status.setText('[ wait ] background task finishing; close again shortly.')
             return
         event.accept()
-        self.music.stop(); self.shell.watermark.stop(); self.sniffy.sprite.movie.stop()
+        self.music.stop(); self.shell.watermark.stop(); self.sniffy.sprite.movie.stop(); self.tray.hide()
 
 def main():
     app = QApplication(sys.argv)

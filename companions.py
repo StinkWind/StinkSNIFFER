@@ -10,19 +10,14 @@ class GlassShell(QWidget):
         super().__init__(objectName='shell')
         self.transparency = 0
         self.frame = QImage()
-        self.video_sink = QVideoSink(self)
-        self.video_sink.videoFrameChanged.connect(self.on_frame)
-        self.watermark = QMediaPlayer(self)
-        self.watermark.setVideoSink(self.video_sink)
-        # No audio output: the watermark is always silent.
-        self.watermark.setLoops(QMediaPlayer.Loops.Infinite)
-        self.watermark.setSource(QUrl.fromLocalFile(str(ROOT/'assets/media/watermark.mp4')))
-        self.watermark.play()
+        self.watermark = QMovie(str(ROOT/'assets/media/watermark.gif'))
+        self.watermark.setCacheMode(QMovie.CacheMode.CacheAll)
+        self.watermark.frameChanged.connect(self.on_frame)
+        self.watermark.start()
 
-    def on_frame(self, frame):
-        if frame.isValid():
-            self.frame = frame.toImage()
-            self.update()
+    def on_frame(self, index):
+        self.frame = self.watermark.currentImage()
+        self.update()
 
     def set_transparency(self, value):
         self.transparency = max(0,min(100,int(value)))
